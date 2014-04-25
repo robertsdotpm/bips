@@ -15,7 +15,9 @@ This BIP describes a new "standard" transaction type for the Bitcoin scripting s
 
 The purpose of the selector scipt is to allow a coin to be spent using more than 1 script.
 
-This is a feature that is necessary for atomic cross chain transfers [1].
+Multiple scripts are provided in the sigPubKey arranged in an if-else chain.  The spender selectes one of these scripts for spending.
+
+This gives more flexibility when creating output scripts.
 
 ==Specification==
 
@@ -30,6 +32,8 @@ OPTION-N is defined:
     OP_DUP OP_N OP_EQUAL OP_IF OP_DROP {Standard Script} OP_ELSE
 
 {Standard Script} is one of the standard scripts, except this type or P2SH.
+
+Note: {Standard Script} is not serialized
 
 OP_N is the single byte push opcode.
 
@@ -69,9 +73,13 @@ The script is redeemed by selecting one of the options.
 
 ==Rationale==
 
-This transaction type (in conjunction with bip-0045) is required in order to support atomic cross chain transfers.  
+This transaction type increases flexibility.  It allows the spender to choose one of many possible scripts to use for redeeming the output.
 
-Multiple methods for spending the transaction output is required for the protocol.
+The desired redeemtion requirements can be different in different situations.
+
+In the case of atomic cross chain transfers [1], there are two situations.  If the other party completes the protocol, then the coin can be redeemed by the purchaser.  If the process stalls, then the original owner of the coin can spend the coin as a refund.
+
+In a betting situation, where an oracle determines the winner, there could be one option for each of the potential winners.  The oracle would provide information, so that only one of the options can be used.
 
 ==Backwards Compatibility==
 

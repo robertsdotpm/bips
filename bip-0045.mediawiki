@@ -15,7 +15,9 @@ This BIP describes a new "standard" transaction type for the Bitcoin scripting s
 
 The purpose of hash locked transactions is to allow an output to be locked unless the spender knows the "password".
 
-This is a feature that is necessary for atomic cross chain transfers [1].
+Hash(x) is included in the sigPubKey and in order to spend the output, x must be provided.
+
+This BIP allows hash locking to be added to any of the standard transactions.  This means that an output can be set to require the unlock value and a digital signature.
 
 ==Specification==
 
@@ -27,6 +29,8 @@ A new standard transaction type that is relayed and included in mined blocks is 
 
 {Standard Script} is any of the standard scripts except P2SH.
 
+Note: {Standard Script} is not serialized
+
 To redeem the script, the spender must provide the password and any signatures required for the standard script.
 
 The sigScript must be of the form:
@@ -35,9 +39,12 @@ The sigScript must be of the form:
 
 ==Rationale==
 
-This transaction type (in conjunction with bip-0046) is required in order to support atomic cross chain transfers.  
+This feature allows conditional unlock of outputs.  Even if a user has the private key for an output, they still cannot spend the output.
 
-The spender needs the password and the private key in order to spend the output.
+This feature is required for implementing the atomic cross chain transfer method [1].  Spending a coin on the first chain requires x to be broadcast.  This allows the 2nd participant to spend the matching coin on the 2nd
+chain.
+
+When combined with a 3rd party oracle, it can be used to make payouts dependent on real world events.  The oracle only provides x, if the event happens.
 
 ==Backwards Compatibility==
 
