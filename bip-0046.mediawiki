@@ -1,0 +1,98 @@
+<pre>
+  BIP: 45
+  Title: Selector Script
+  Author: Noel Tiernan <tier.nolan@gmail.com>
+  Status: Draft
+  Type: Standards Track
+  Created: 2014-04-25
+</pre>
+
+==Abstract==
+
+This BIP describes a new "standard" transaction type for the Bitcoin scripting system
+
+==Motivation==
+
+The purpose of the selector scipt is to allow a coin to be spent using more than 1 script.
+
+This is a feature that is necessary for atomic cross chain transfers [1].
+
+==Specification==
+
+A new standard transaction type that is relayed and included in mined blocks is defined:
+
+    OPTION-1 OPTION-2 .... OPTION-N OPTION-CLOSE
+
+Transaction with more than 5 options are considered non-standard.
+
+OPTION-N is defined:
+
+    OP_DUP OP_N OP_EQUAL OP_IF OP_DROP {Standard Script} OP_ELSE
+
+{Standard Script} is one of the standard scripts, except this type or P2SH.
+
+OP_N is the single byte push opcode.
+
+OPTION-CLOSE is defined:
+
+    OP_RETURN OP_ENDIF OP_ENDIF .... OP_ENDIF
+
+The number of OP_ENDIFs is equal to the number of options.
+
+A script with two options would be of the form:
+
+    OP_DUP 
+    OP_1 
+    OP_EQUAL 
+    OP_IF 
+        OP_DROP 
+        {Standard Script} 
+    OP_ELSE 
+        OP_DUP 
+        OP_2 
+        OP_EQUAL 
+        OP_IF 
+            OP_DROP 
+            {Standard Script} 
+        OP_ELSE
+            OP_RETURN
+        OP_ENDIF
+    OP_ENDIF
+
+The script compares compares the first item on the stack with each option in turn.  Once a match is found, the index
+is dropped from the stack and the selected script is executed.  If no matching option is found, the final else branch
+executes.  This causes OP_RETURN to be executed.
+
+The script is redeemed by selecting one of the options.
+
+    ...signatures... OP_N
+
+==Rationale==
+
+This transaction type (in conjunction with bip-0045) is required in order to support atomic cross chain transfers.  
+
+Multiple methods for spending the transaction output is required for the protocol.
+
+==Backwards Compatibility==
+
+This BIP does not change the validation rules for the network, so there is no risk of network split.
+
+Once a sufficient number of network nodes have updated, the new transactions should propagate to miners.
+
+Only one script is executed, so the verification load is the same as a transaction which uses that script directly.
+Since that script must be a standard transaction, there is no additional CPU load.
+
+Since all script options must be provided, these transactions are larger than standard transactions.  
+Users of this transaction type would have to pay fees to cover the extra size.
+
+==Reference Implementation==
+
+TBD
+
+== References ==
+
+[1] https://bitcointalk.org/index.php?topic=193281.0
+
+==Copyright==
+
+This document is placed in the public domain.

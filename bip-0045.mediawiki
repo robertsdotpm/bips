@@ -1,0 +1,58 @@
+<pre>
+  BIP: 45
+  Title: Hash Locked Transaction
+  Author: Noel Tiernan <tier.nolan@gmail.com>
+  Status: Draft
+  Type: Standards Track
+  Created: 2014-04-25
+</pre>
+
+==Abstract==
+
+This BIP describes a new "standard" transaction type for the Bitcoin scripting system
+
+==Motivation==
+
+The purpose of hash locked transactions is to allow an output to be locked unless the spender knows the "password".
+
+This is a feature that is necessary for atomic cross chain transfers [1].
+
+==Specification==
+
+A new standard transaction type that is relayed and included in mined blocks is defined:
+
+    OP_HASH160 [20-byte-password-hash] OP_EQUAL_VERIFY {Standard Script}
+
+[20-byte-password-hash] is the hash of the password.
+
+{Standard Script} is any of the standard scripts except P2SH.
+
+To redeem the script, the spender must provide the password and any signatures required for the standard script.
+
+The sigScript must be of the form:
+
+    ...signatures... [password]
+
+==Rationale==
+
+This transaction type (in conjunction with bip-0046) is required in order to support atomic cross chain transfers.  
+
+The spender needs the password and the private key in order to spend the output.
+
+==Backwards Compatibility==
+
+This BIP does not change the validation rules for the network, so there is no risk of network split.
+
+Once a sufficient number of network nodes have updated, the new transactions should propagate to miners.
+
+==Reference Implementation==
+
+TBD
+
+== References ==
+
+[1] https://bitcointalk.org/index.php?topic=193281.0
+
+==Copyright==
+
+This document is placed in the public domain.

@@ -193,6 +193,17 @@ Those proposing changes should consider that ultimately consent may rest with th
 | Standard
 | Draft
 |-
+| [[bip-0045.mediawiki|44]]
+| Pay to Password
+| Tier Nolan
+| Standard
+| Draft
+|-
+| [[bip-0046.mediawiki|44]]
+| Selector Script
+| Tier Nolan
+| Standard
+| Draft
 | [[bip-0050.mediawiki|50]]
 | March 2013 Chain Fork Post-Mortem
 | Gavin Andresen
