@@ -25,141 +25,179 @@ Each party has an incentive to participate in the defined broadcast ordering.  I
 
 It is assumed that Bob wishes to buy A altcoins (ATC) from Alice for B Bitcoins (BTC).  Transaction fees are assumed to be fb for the Bitcoin network and fa for the altcoin network.  Bob will pay all Bitcoin fees and Alice will pay all altcoin fees.  The exchange price agreed between the parties will take this into account.
 
-Six transactions need to be created for the protocol.  When a transaction is signed, it will be referred to as [transaction name]-sA when signed by Alice and [transaction name]-sB when signed by Bob.  Once the transaction is signed by both, it will be referred to as [transaction-name]-sAB.  Signing in this context, may include providing the preimage of a hash digest.
-
 Public keys are referred to as pub-AN for Alice's keys and pub-BN for Bob's keys.  An optional 3rd party signature is also possible, designated pub-T.
 
 The third party is only required to protect against transaction malleability.  Once transaction malleability is resolved, the third party will not be necessary.  
 
-An additional standard transaction type is required for the network to accept the transactions associated with the protocol.  This transaction type has an additional requirement that the spender must know the pre-image of a HASH160() digest.
+An additional standard transaction type is required on one of the networks for the protocol to operate.  Trades can be performed between a network which supports P2SH and other that supports OP_HASH160 transaction locking.
 
 ===Transaction Creation===
 
-1) Alice sends Bob pub-A1 and pub-A2.
+1) Alice sends Bob five public keys (pub-A1, ..., pub-A5)
 
-2) Bob creates his "bail-in" transaction. 
+2) Bob sends Alice five public keys (pub-B1, ..., pub-B5) and Hash160(x)
+
+    x = serialized{pub-B6 OP_CHECKSIG}
+
+3) Bob creates his "bail-in" transaction. 
 
 This transaction can only be spent with both Alice and Bob's signatures.
 
     Name: Bob.Bail.In
-    Input value:  B + 2*fb
-    Input source: (From Bob's Bitcoins)
-    Ouput value:  B + fb
-    ScriptPubKey: OP_2 pub-A1 pub-B1 OP_2 OP_CHECKMULTISIG
+    Input value:     B + 2*fb + change
+    Input source:    (From Bob's coins, multiple inputs are allowed)
+    Output A value:  B + fb
+    ScriptPubKey A:  OP_HASH160 Hash160(P2SH Redeem) OP_EQUAL
+    Output B value:  change
+    ScriptPubKey B:  <= 100 bytes
 
-3) Bob selects a random x and creates Alice's payout transaction. 
+    P2SH Redeem:  OP_2 pub-A1 pub-B1 OP_2 OP_CHECKMULTISIG
+
+4) Alice creates creates her bail-in transaction.
+
+Unlike Bob's bail-in, Alice's bail-in transaction has 3 outputs.
+
+The second output can only be spent if Bob publishes x.  It is also protected by multisig.
+
+    Name: Alice.Bail.In
+    Input value:  A + 2*fa + change
+    Input source: (From Alice's altcoins, multiple inputs are allowed)
+    Output A value: A
+    ScriptPubKey A: OP_HASH160 Hash160(P2SH Redeem) OP_EQUAL
+    Output B value: fa
+    ScriptPubKey B: OP_HASH160 Hash160(x) OP_EQUAL
+    Output C value: change
+    ScriptPubKey C: <= 100 bytes
+
+    P2SH Redeem:    OP_2 pub-A3 pub-B4 OP_2 OP_CHECKMULTISIG
+
+Note: x = serialized{pub-B6 OP_CHECKSIG}
+
+Output B uses P2SH, this means that Bob must provide x in order to spend it.
+
+5) Bob and Alice exchange bail-in transaction hashes
+
+Bob sends Alice Hash256(Bob.Bail.In) and the corresponding A index
+
+Alice sends Bob Hash256(Alice.Bail.In) and the corresponding A and B indexes
+
+Note: The outputs in the bail-in transaction do not need to be ordered as given in steps 1 and 2.
+
+6) Bob creates Alice's payout transaction. 
 
 This transaction can be spent by Alice, but only if she knows x.
 
     Name: Alice.Payout
     Input value:  B + fb
-    Input source: Bob.Bail.In
+    Input source: Bob.Bail.In:A
     Output value: B
-    ScriptPubKey: OP_HASH160 Hash160(x) OP_EQUAL_VERIFY pub-A2 OP_CHECKSIG
+    ScriptPubKey: OP_HASH160 Hash160(P2SH Redeem) OP_EQUAL
 
-4) Bob creates his own refund transaction. 
+    P2SH Redeem:  OP_HASH160 Hash160(x) OP_EQUAL_VERIFY pub-A2 OP_CHECKSIG
+
+7) Bob creates his own refund transaction. 
 
 This transaction is timelocked, so that it can't be spent until the timeout (T) has passed.
 
     Name: Bob.Refund
-    Input value: B + fb
-    Input source: Bob.Bail.In
+    Input value:  B + fb
+    Input source: Bob.Bail.In:A
     Output value: B
-    ScriptPubKey: pub-B2
+    ScriptPubKey: OP_HASH160 Hash160(P2SH Redeem) OP_EQUAL
     Locktime:     (current block height) + (T / 10 minutes)
 
-4b) If a trusted third party is desired to protect against transaction malleability, an additional transaction is required.
+    P2SH Redeem:  pub-B2 OP_CHECKSIG
+
+7b) If a trusted third party is desired to protect against transaction malleability, an additional transaction is required.
 
     Name: Bob.Trusted.Refund
     Input value:  B + fb
-    Input source: Bob.Bail.In
+    Input source: Bob.Bail.In:A
     Output value: B
-    ScriptPubKey: OP_2 pub-B3 pub-T OP_2 OP_CHECKMULTISIG
+    ScriptPubKey: OP_HASH160 Hash160(P2SH Redeem) OP_EQUAL
+
+    P2SH Redeem:  OP_2 pub-B3 pub-T OP_2 OP_CHECKMULTISIG
 
 By acting together, Bob and the third party can spend Bob.Bail.In.
 
-5) Bob sends Alice Alice.Payout-sB, Bob.Refund and Bob.Trusted.Refund.
-
-6) Alice sends back Bob.Refund-sA and Bob.Trusted.Refund-sA.
-
-Once they have signed the transactions with their own private keys, Alice has Alice.Payout-sAB and Bob has Bob.Refund-sAB, Bob.Bail.In-sB and Bob.Trusted.Refund-sAB.
-
-The remaining transactions held by the parties are not completely signed, and so cannot be submitted to the network.
-
-The exchange of the second set of transactions can occur concurrently with the exchange of the first set.
-
-7) Bob sends Alice pub-B4 and pub-B5.
-
-8) Alice creates creates her bail-in transaction. 
-
-Unlike Bob's bail-in, Alice's bail-in transaction has 2 outputs.
-
-The second output can only be spent if Bob publishes x.  It is also protected by multisig.
-
-    Name: Alice.Bail.In
-    Input value:  A + 2*fa
-    Input source: (From Alice's altcoins)
-    Output value: A
-    ScriptPubKey: OP_2 pub-A3 pub-B4 OP_2 OP_CHECKMULTISIG
-    Output value: fa
-    ScriptPubKey: OP_HASH160 Hash160(x) OP_EQUAL_VERIFY OP_2 pub-A3 pub-B4 OP_2 OP_CHECKMULTISIG
-
-9) Alice creates Bob's payout transaction. 
+8) Alice creates Bob's payout transaction. 
 
 This transaction can be spent by Bob.  However, since it has Alice.Bail.In:1 as an input, Bob must reveal x in order to spend it.
 
     Name: Bob.Payout
     Input value:  A
-    Input source: Alice.Bail.In:0
+    Input source: Alice.Bail.In:A
     Input value:  fa
-    Input source: Alice.Bail.In:1
+    Input source: Alice.Bail.In:B
     Output value: A
-    ScriptPubKey: pub-B5 OP_CHECKSIG
+    ScriptPubKey: OP_HASH160 Hash160(P2SH Redeem) OP_EQUAL
 
-10) Alice creates her own refund transaction. 
+    P2SH Redeem:  pub-B5 OP_CHECKSIG
+
+9) Alice creates her own refund transaction. 
 
 This transaction is timelocked, so that it can't be spent for until half the timeout (T/2) has passed.  This transaction does not require Alice.Bail.In:1, so Alice can spend it without x being revealed.
 
     Name: Alice.Refund
-    Input value: A + fa
-    Input source: Alice.Bail.In:0
-    Output value: A
-    ScriptPubKey: pub-A3
+    Input value: A
+    Input source: Alice.Bail.In:A
+    Output value: A - fa
+    ScriptPubKey: OP_HASH160 Hash160(P2SH Redeem) OP_EQUAL
     Locktime:     current block height + ((T/2)/(altcoin block rate))
 
-10b) Alice creates the third party transaction, if required.
+    P2SH Redeem:  pub-A4 OP_CHECKSIG
+
+9b) Alice creates the third party transaction, if required.
 
     Name: Alice.Trusted.Refund
-    Input value:  A + fa
+    Input value:  A
     Input source: Alice.Bail.In:0
-    Output value: A
-    ScriptPubKey: OP_2 pub-T pub-A4 OP_2 OP_CHECKMULTISIG
+    Output value: A - fa
+    ScriptPubKey: OP_HASH160 Hash160(P2SH Redeem) OP_EQUAL
 
-11) Alice sends Bob Bob.Payout-sA, Alice.Refund and Alice.Trusted.Refund to Bob.
+    P2SH Redeem:  OP_2 pub-T pub-A5 OP_2 OP_CHECKMULTISIG
 
-12) Bob sends back Alice.Refund-sB and Alice.Trusted.Refund-sB.
+9) Bob and Alice exchange transactions
 
-In addition to the transaction from the first group, Bob has Bob.Payout-sAB and Alice has Alice.Refund-sAB, Alice.Bail.In-sA and Alice.Trusted.Refund-sAB. 
+Bob sends Alice unsigned versions of Bob.Refund and Bob.Trusted.Refund and an (half) signed version of Alice.Payout.
 
-As before, the remaining transactions held by the parties are not completely signed, and so cannot be submitted to the network.
+Alice signs all three and sends back (half) signed versions of Bob.Refund and Bob.Trusted.Refund.
+
+Alice has a fully signed version of Alice.Payout.
+
+When Bob signs both of them, he has fully signed versions of Bob.Refund and Bob.Trusted.Refund.
+
+Alice sends Bob unsigned versions of Alice.Refund and Alice.Trusted.Refund and an (half) signed version of Bob.Payout.
+
+Bob signs all three and sends back (half) signed versions of Alice.Refund and Alice.Trusted.Refund.
+
+Bob has a fully signed version of Bob.Payout.
+
+When Alice signs both of them, she has fully signed versions of Alice.Refund and Alice.Trusted.Refund.
+
+Each of the parties has fully signed versions of the three transactions relating to them.  
+
+10) Exchange of bail-in transactions
+
+The parties can safely exchange bail-in transactions at this point.  This is not necessary for the protocol, but would allow both parties to verify that the other party at least has a valid bail-in transaction before locking their funds. 
 
 No further communication is required between the parties.  Bob and Alice can determine the state of the transaction by monitoring both chains.
 
 ===Transaction Broadcast===
 
-The transactions must be broadcast in a specific order for the composite transaction to be atomic.  In this section, the -s suffix is not included as only signed transactions are considered.
+The transactions must be broadcast in a specific order for the composite transaction to be atomic.  
 
 Bob has the following transactions:
 
 * Bob.Bail.In: Bob's bail-in transaction
-* Bob.Refund: Bob's refund transaction (timelocked until the timeout has passed)
-* Bob.Payout: Bob's altcoin payout transaction (can only be spent by revealing x)
+* Bob.Refund:  Bob's refund transaction (timelocked until the timeout has passed)
+* Bob.Payout:  Bob's altcoin payout transaction (can only be spent by revealing x)
 
 Alice has the following transactions
 
-* Alice.Payout: Alice's Bitcoin payout transaction (can only be spent if Bob reveals x)
+* Alice.Payout:  Alice's Bitcoin payout transaction (can only be spent if Bob reveals x)
 * Alice.Bail.In: Alice's bail-in transaction
-* Alice.Refund: Alice's refund transaction (timelocked until half the timeout has passed)
+* Alice.Refund:  Alice's refund transaction (timelocked until half the timeout has passed)
 
 ====Step 1: Bail-in by Bob====
 
@@ -175,6 +213,8 @@ Alice's only broadcast option is to move to step 2
 * She can broadcast Alice.Bail.In, which moves the protocol to step 2
 
 If the protocol ends at this point, Bob can use his refund transaction to recover his Bitcoins after the timeout has expired.
+
+Alice can safely broadcast her bail-in transaction before Bob.  Even if Bob doesn't broadcast his transaction, she can use her refund transaction to recover her funds.
 
 ====Step 2: Bail in by Alice====
 
@@ -210,7 +250,7 @@ Alice broadcasts Alice.Payout to claim her Bitcoins.
 
 If Alice doesn't claim her Bitcoins before the timeout on Bob.Refund ends, then Bob could use Bob.Refund to recover the Bitcoins he used in the trade.
 
-Since Bob could wait up to half the timeout (T/2) before completing step 3 and Bob.Refund has a timelock of T, Alice has at least half the timeout (T/2) to broadcast Alice.Payout.
+Since Bob can wait at most half the timeout (T/2) before completing step 3 and Bob.Refund has a timelock of T, Alice has at least half the timeout (T/2) to broadcast Alice.Payout.
 
 ==Specification==
 
@@ -222,9 +262,10 @@ Public keys must be serialized using strict SEC format:
 
     byte(0x02) byte_array(32):                Compressed even key
     byte(0x03) byte_array(32):                Compressed odd key
-    byte(0x04) byte_array(32) byte_array(32): Uncompressed key
 
-It is recommended that compressed keys are used.
+Compressed keys are mandatory.
+
+When included in transactions, hash_type must be set to 1.
 
 Signatures must be serialized using strict DER format.
 
@@ -234,7 +275,7 @@ total_length is equal to 3 + len(R) + len(S).
 
 R and S are represented in signed Big Endian format without leading zeros, except that exactly one leading zero is mandatory, if the number would otherwise be negative.  This occurs if the MSB in the first non-zero byte is set.
 
-Transactions shall be serialized using the bitcoin protocol serialization.  Partially signed transactions should include the partial signatures in their sigScript fields, in the order that they would appear in the fully signed sigScript.
+Transactions shall be serialized using the bitcoin protocol serialization.  Partially signed transactions should include the partial signature in their sigScript fields.  The serialized P2SH Redeem script should be appended to the serialized transaction.
 
 One party shall act as server and one party shall act as client.
 
@@ -271,24 +312,22 @@ The following methods must be supported.
 This method is used to initiate the protocol.
 
     {"id":1, "method": "trade.request", [long_deposit, [third_parties], k_client,
-                                         sell_coin_name, sell_coin_symbol, sell_coin_amount, sell_coin_fee, 
+                                         sell_magic_value, sell_coin_amount, sell_coin_fee, 
                                          sell_locktime,
-                                         buy_coin_name, buy_coin_symbol, buy_coin_amount, buy_coin_fee, 
+                                         buy_magic_value, buy_coin_amount, buy_coin_fee, 
                                          buy_locktime]}
 
 The parameters are defined as
 
-    slow_trader (boolean):        True if the server is the slow trader, false otherwise
-    third_party (list of string): Hex encoding of acceptable 3rd parties' public key (or Null for no 3rd party)
-    k_client (string):            A random hex encoded byte array (32 bytes)
-    sell_coin_name (string):      The name of the coin the client is selling
-    sell_coin_symbol (string):    The 3 letter code for the coin the client is selling
-    sell_coin_amount (number):    An integer count of the number of coins being solid (in the smallest units)
-    sell_locktime (number):       The int locktime for the client's refund transaction
-    buy_coin_name (string):       The name of the coin the client is buying
-    buy_coin_symbol (string):     The 3 letter code for the coin the client is buying
-    buy_coin_amount (number):     An integer count of the number of coins being bought (in the smallest units)
-    buy_locktime (number):        The int locktime for the server's refund transaction
+    slow_trader (boolean):          True if the server is the slow trader, false otherwise
+    third_party (list of string):   Hex encoding of acceptable 3rd parties' public key (or Null for no 3rd party)
+    k_client (string):              A random hex encoded byte array (32 bytes)
+    sell_coin_magic_value (string): Hex encoding of the network magic value for the coin being sold
+    sell_coin_amount (number):      An integer count of the number of coins being sold (in the smallest units)
+    sell_locktime (number):         The int locktime for the client's refund transaction
+    buy_coin_magic_value (string):  Hex encoding of the network magic value for the coin being bought
+    buy_coin_amount (number):       An integer count of the number of coins being bought (in the smallest units)
+    buy_locktime (number):          The int locktime for the server's refund transaction
 
 The server can decide if the trade is acceptable.
 
@@ -327,39 +366,25 @@ The third party's public key is modified to give
 
 This key should be used to generate the third party's refund transaction.
 
-===Request Hash===
-
-This methods is used to obtain hash160(x).  It is only needed when the client is the fast trader.
-
-    {"id": 1, "method": "request.hashx", "params": []}
-
-The response is the hex encoded hash of the the secret parameter.
-
-    {"id":1, "result": [hashx], "error": Null}
-
-The result parameters are defined as
-
-    hashx:   The Hash160(x) encoded as a 40 character (20 byte) hex string
-
 ===Exchange Keys===
 
-This method is used to exchange public keys between the parties.  Each party has to provide 5 public keys.
+This method is used to exchange public keys between the parties.  Each party has to provide 5 public keys and the long trader must provide hash_x.  The slow trader should set hash_x to Null.
 
-    {"id": 1, "method":"keys.request", "params": [key1, key2, ... key5]}
+    {"id": 1, "method":"keys.request", "params": [key1, key2, ... key5, hash_x]}
 
 The server responds with 5 public keys.
 
-    {"id": 1, "result": [key1, key2, ... key5], "error": Null}
+    {"id": 1, "result": [key1, key2, ... key5, hash_x], "error": Null}
 
 ===Exchange Bail-in Transaction Hashes===
 
-This method is for exchanging bail-in transaction hashes.
+This method is for exchanging bail-in transaction hashes and the A and B indexes.  The fast trader should set B to Null.
 
-    {"id": 1, "method":"bail_in_hash.request", "params": [client_bail_in_hash]}
+    {"id": 1, "method":"bail_in_hash.request", "params": [client_bail_in_hash A B]}
 
 The server responds with its own bail-in transaction hash.
 
-    {"id": 1, "result":"server_bail_in_hash", "error": Null}
+    {"id": 1, "result":"server_bail_in_hash A B", "error": Null}
 
 Both hashes should be encoded as 64 character (32 byte) hashes.  This is the transaction id hash, not hash160.
 
@@ -406,6 +431,20 @@ The parameters are defined as
     client_signed_third_party_refund: This is the third party signed refund transaction (or Null) that pays to the client
 
 Once final transactions are exchanged, no further communication is required.
+
+===Exchange Bail-in Transactions===
+
+This method is for the parties to exchange bail-in transactions.  This allows both parties to broadcast the both bail-in transactions.
+
+Broadcasting the bail-in transaction prior to this step reduces malleability risk by the other party.
+
+    {"id": 1, "method": "exchange.bail.in", params: [server_bail_in]}
+
+The response is of the same form
+
+    {"id": 1, "result": [client_bail_in], "error": Null}
+
+Unlike for the previous two methods, the 
 
 ===Trade Cancel===
 
@@ -455,15 +494,15 @@ The third party doesn't have to monitor all the chains.  As long as it doesn't a
 
 ==Compatibility==
 
-The protocol outlined in this BIP requires the use of a non-standard transaction.  The timeout must be set large enough that transactions are accepted by the network before they timeout.
+The protocol outlined in this BIP requires the use of a single non-standard scriptPubKey.
 
-Two new standard transactions are required
+The Alice.Payout transaction has a scriptPubKey of the following form.
 
-    OP_HASH160 OP_EQUAL_VERIFY [public key] OP_CHECKSIG
+    OP_HASH160 Hash160(x) OP_EQUAL_VERIFY pub-A2 OP_CHECKSIG
 
-    OP_HASH160 OP_EQUAL_VERIFY OP_N [public key 1] ... [public key m] OP_M OP_CHECK_MULTISIG
+All the other scriptPubKeys are standard transactions.
 
-These transactions combine two standard transaction with a hash preimage check.
+If the transaction is only standard on one of the two networks, then the party selling coin on that network should be the fast trader.
 
 ==Reference Implementation==
 
