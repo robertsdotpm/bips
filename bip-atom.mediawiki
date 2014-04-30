@@ -1,0 +1,478 @@
+<pre>
+  BIP: XX
+  Title: Atomic Cross Chain Transfers
+  Author: Noel Tiernan <tier.nolan@gmail.com>
+  Status: Draft
+  Type: Standards Track
+  Created: 2014-04-29
+</pre>
+
+==Abstract==
+
+This BIP describes a method for atomically trading coins between Bitcoin and a Bitcoin-like alternative coin (altcoin). 
+
+==Motivation==
+
+There are many coin trading exchanges.  These websites allow users to trade Bitcoins for altcoin, and also to trade one type altcoin for another.
+
+These sites are centralised in nature.  A p2p coin trading system requires a way for traders to trade their coins in an atomic way.
+
+==Protocol Overview==
+
+The protocol defined in this BIP consists of two stages.  In the first stage, the parties cooperate to generate a set of transactions, without broadcasting.  In the second stage, the transactions are broadcast in a specific ordering.  Communication between the parties is only required during the first stage.
+
+Each party has an incentive to participate in the defined broadcast ordering.  If the protocol stops at any stage before the transaction is committed, both parties can recover their funds using timelocked refund transactions.
+
+It is assumed that Bob wishes to buy A altcoins (ATC) from Alice for B Bitcoins (BTC).  Transaction fees are assumed to be fb for the Bitcoin network and fa for the altcoin network.  Bob will pay all Bitcoin fees and Alice will pay all altcoin fees.  The exchange price agreed between the parties will take this into account.
+
+Six transactions need to be created for the protocol.  When a transaction is signed, it will be referred to as [transaction name]-sA when signed by Alice and [transaction name]-sB when signed by Bob.  Once the transaction is signed by both, it will be referred to as [transaction-name]-sAB.  Signing in this context, may include providing the preimage of a hash digest.
+
+Public keys are referred to as pub-AN for Alice's keys and pub-BN for Bob's keys.  An optional 3rd party signature is also possible, designated pub-T.
+
+The third party is only required to protect against transaction malleability.  Once transaction malleability is resolved, the third party will not be necessary.  
+
+An additional standard transaction type is required for the network to accept the transactions associated with the protocol.  This transaction type has an additional requirement that the spender must know the pre-image of a HASH160() digest.
+
+===Transaction Creation===
+
+1) Alice sends Bob pub-A1 and pub-A2.
+
+2) Bob creates his "bail-in" transaction. 
+
+This transaction can only be spent with both Alice and Bob's signatures.
+
+    Name: Bob.Bail.In
+    Input value:  B + 2*fb
+    Input source: (From Bob's Bitcoins)
+    Ouput value:  B + fb
+    ScriptPubKey: OP_2 pub-A1 pub-B1 OP_2 OP_CHECKMULTISIG
+
+3) Bob selects a random x and creates Alice's payout transaction. 
+
+This transaction can be spent by Alice, but only if she knows x.
+
+    Name: Alice.Payout
+    Input value:  B + fb
+    Input source: Bob.Bail.In
+    Output value: B
+    ScriptPubKey: OP_HASH160 Hash160(x) OP_EQUAL_VERIFY pub-A2 OP_CHECKSIG
+
+4) Bob creates his own refund transaction. 
+
+This transaction is timelocked, so that it can't be spent until the timeout (T) has passed.
+
+    Name: Bob.Refund
+    Input value: B + fb
+    Input source: Bob.Bail.In
+    Output value: B
+    ScriptPubKey: pub-B2
+    Locktime:     (current block height) + (T / 10 minutes)
+
+4b) If a trusted third party is desired to protect against transaction malleability, an additional transaction is required.
+
+    Name: Bob.Trusted.Refund
+    Input value:  B + fb
+    Input source: Bob.Bail.In
+    Output value: B
+    ScriptPubKey: OP_2 pub-B3 pub-T OP_2 OP_CHECKMULTISIG
+
+By acting together, Bob and the third party can spend Bob.Bail.In.
+
+5) Bob sends Alice Alice.Payout-sB, Bob.Refund and Bob.Trusted.Refund.
+
+6) Alice sends back Bob.Refund-sA and Bob.Trusted.Refund-sA.
+
+Once they have signed the transactions with their own private keys, Alice has Alice.Payout-sAB and Bob has Bob.Refund-sAB, Bob.Bail.In-sB and Bob.Trusted.Refund-sAB.
+
+The remaining transactions held by the parties are not completely signed, and so cannot be submitted to the network.
+
+The exchange of the second set of transactions can occur concurrently with the exchange of the first set.
+
+7) Bob sends Alice pub-B4 and pub-B5.
+
+8) Alice creates creates her bail-in transaction. 
+
+Unlike Bob's bail-in, Alice's bail-in transaction has 2 outputs.
+
+The second output can only be spent if Bob publishes x.  It is also protected by multisig.
+
+    Name: Alice.Bail.In
+    Input value:  A + 2*fa
+    Input source: (From Alice's altcoins)
+    Output value: A
+    ScriptPubKey: OP_2 pub-A3 pub-B4 OP_2 OP_CHECKMULTISIG
+    Output value: fa
+    ScriptPubKey: OP_HASH160 Hash160(x) OP_EQUAL_VERIFY OP_2 pub-A3 pub-B4 OP_2 OP_CHECKMULTISIG
+
+9) Alice creates Bob's payout transaction. 
+
+This transaction can be spent by Bob.  However, since it has Alice.Bail.In:1 as an input, Bob must reveal x in order to spend it.
+
+    Name: Bob.Payout
+    Input value:  A
+    Input source: Alice.Bail.In:0
+    Input value:  fa
+    Input source: Alice.Bail.In:1
+    Output value: A
+    ScriptPubKey: pub-B5 OP_CHECKSIG
+
+10) Alice creates her own refund transaction. 
+
+This transaction is timelocked, so that it can't be spent for until half the timeout (T/2) has passed.  This transaction does not require Alice.Bail.In:1, so Alice can spend it without x being revealed.
+
+    Name: Alice.Refund
+    Input value: A + fa
+    Input source: Alice.Bail.In:0
+    Output value: A
+    ScriptPubKey: pub-A3
+    Locktime:     current block height + ((T/2)/(altcoin block rate))
+
+10b) Alice creates the third party transaction, if required.
+
+    Name: Alice.Trusted.Refund
+    Input value:  A + fa
+    Input source: Alice.Bail.In:0
+    Output value: A
+    ScriptPubKey: OP_2 pub-T pub-A4 OP_2 OP_CHECKMULTISIG
+
+11) Alice sends Bob Bob.Payout-sA, Alice.Refund and Alice.Trusted.Refund to Bob.
+
+12) Bob sends back Alice.Refund-sB and Alice.Trusted.Refund-sB.
+
+In addition to the transaction from the first group, Bob has Bob.Payout-sAB and Alice has Alice.Refund-sAB, Alice.Bail.In-sA and Alice.Trusted.Refund-sAB. 
+
+As before, the remaining transactions held by the parties are not completely signed, and so cannot be submitted to the network.
+
+No further communication is required between the parties.  Bob and Alice can determine the state of the transaction by monitoring both chains.
+
+===Transaction Broadcast===
+
+The transactions must be broadcast in a specific order for the composite transaction to be atomic.  In this section, the -s suffix is not included as only signed transactions are considered.
+
+Bob has the following transactions:
+
+* Bob.Bail.In: Bob's bail-in transaction
+* Bob.Refund: Bob's refund transaction (timelocked until the timeout has passed)
+* Bob.Payout: Bob's altcoin payout transaction (can only be spent by revealing x)
+
+Alice has the following transactions
+
+* Alice.Payout: Alice's Bitcoin payout transaction (can only be spent if Bob reveals x)
+* Alice.Bail.In: Alice's bail-in transaction
+* Alice.Refund: Alice's refund transaction (timelocked until half the timeout has passed)
+
+====Step 1: Bail-in by Bob====
+
+Bob broadcasts Bob.Bail.In.
+
+Bob's has no option other than waiting
+* He cannot broadcast Bob.Refund since it is timelocked
+* He cannot broadcast Bob.Payout since it has Alice.Bail.In as an input
+
+Alice's only broadcast option is to move to step 2
+* She cannot broadcast Alice.Payout since she doesn't know x
+* She cannot broadcast Alice.Refund since it is timelocked
+* She can broadcast Alice.Bail.In, which moves the protocol to step 2
+
+If the protocol ends at this point, Bob can use his refund transaction to recover his Bitcoins after the timeout has expired.
+
+====Step 2: Bail in by Alice====
+
+Alice broadcasts Alice.Bail.In.
+
+Alice has no option other than waiting
+* She cannot broadcast Alice.Refund since it is timelocked
+* She cannot broadcast Alice.Payout since she doesn't know x
+
+Bob's only broadcast option is to move to step 3
+* He cannot broadcast Bob.Refund since it is timelocked
+* He can broadcast Bob.Payout since Alice.Bail.In has been broadcast
+
+It is recommended that Bob wait until Alice.Bail.In has been confirmed by a few blocks before proceeding to step 3.
+
+====Step 3: Bob commits to the transaction====
+
+Bob broadcasts Bob.Payout to claim his altcoins.  To spend the 2nd output of Alice.Bail.In requires that Bob reveal x.
+
+This completes Bob's participation in the protocol.
+
+Once Alice.Bail.In has been confirmed to a sufficient depth, Bob should broadcast Bob.Payout as soon as possible.  Since broadcasting Bob.Payout reveals x, if Bob waits until the the locktime on Alice.Refund has expired (or is near to expire), then it creates a race condition.  Alice could broadcast Alice.Refund to get her altcoins back and also broadcast Alice.Payout to claim Bob's Bitcoins.
+
+If he broadcasts immediately, he has half the timeout time for his transction to be confirmed.
+
+Alice has only one broadcast option
+* She cannot broadcast Alice.Refund since it is timelocked
+* She can broadcast Alice.Payout since she knows x, which moved the protocol to step 4
+
+====Step 4: Alice completes the transaction====
+
+Alice broadcasts Alice.Payout to claim her Bitcoins.
+
+If Alice doesn't claim her Bitcoins before the timeout on Bob.Refund ends, then Bob could use Bob.Refund to recover the Bitcoins he used in the trade.
+
+Since Bob could wait up to half the timeout (T/2) before completing step 3 and Bob.Refund has a timelock of T, Alice has at least half the timeout (T/2) to broadcast Alice.Payout.
+
+==Specification==
+
+JSON-RPC shall be used for communication between the parties.
+
+Hex encoding shall be used for all byte arrays.
+
+Public keys must be serialized using strict SEC format:
+
+    byte(0x02) byte_array(32):                Compressed even key
+    byte(0x03) byte_array(32):                Compressed odd key
+    byte(0x04) byte_array(32) byte_array(32): Uncompressed key
+
+It is recommended that compressed keys are used.
+
+Signatures must be serialized using strict DER format.
+
+    byte(0x30) byte(total_length) byte(0x02) byte(len(R)) byte_array(len(R)) byte(len(s)) byte_array(len(s))
+
+total_length is equal to 3 + len(R) + len(S).
+
+R and S are represented in signed Big Endian format without leading zeros, except that exactly one leading zero is mandatory, if the number would otherwise be negative.  This occurs if the MSB in the first non-zero byte is set.
+
+Transactions shall be serialized using the bitcoin protocol serialization.  Partially signed transactions should include the partial signatures in their sigScript fields, in the order that they would appear in the fully signed sigScript.
+
+One party shall act as server and one party shall act as client.
+
+The party which selects x and has the longer timeout is defined as the slow trader.  The other party is the fast trader.
+
+===Request Message===
+
+Each message shall have the following format.
+
+    {"id":1, "method": "method.name", "params": [param1, param2]}
+
+id:     The method id, it should increment for each method call
+method: The name of the method
+params: The method parameters
+
+===Result Message===
+
+The server shall reply to Request methods with a response message.
+
+    {"id": 1, "result": result, "error: Null}
+
+===Error Message===
+
+The server shall reply with an error message, if the request is invalid.
+
+    {"id": 1, "result": Null, "error: [error_code, "error_string"]}
+
+===Methods===
+
+The following methods must be supported.
+
+===Trade Request===
+
+This method is used to initiate the protocol.
+
+    {"id":1, "method": "trade.request", [long_deposit, [third_parties], k_client,
+                                         sell_coin_name, sell_coin_symbol, sell_coin_amount, sell_coin_fee, 
+                                         sell_locktime,
+                                         buy_coin_name, buy_coin_symbol, buy_coin_amount, buy_coin_fee, 
+                                         buy_locktime]}
+
+The parameters are defined as
+
+    slow_trader (boolean):        True if the server is the slow trader, false otherwise
+    third_party (list of string): Hex encoding of acceptable 3rd parties' public key (or Null for no 3rd party)
+    k_client (string):            A random hex encoded byte array (32 bytes)
+    sell_coin_name (string):      The name of the coin the client is selling
+    sell_coin_symbol (string):    The 3 letter code for the coin the client is selling
+    sell_coin_amount (number):    An integer count of the number of coins being solid (in the smallest units)
+    sell_locktime (number):       The int locktime for the client's refund transaction
+    buy_coin_name (string):       The name of the coin the client is buying
+    buy_coin_symbol (string):     The 3 letter code for the coin the client is buying
+    buy_coin_amount (number):     An integer count of the number of coins being bought (in the smallest units)
+    buy_locktime (number):        The int locktime for the server's refund transaction
+
+The server can decide if the trade is acceptable.
+
+For altcoins with irregular block rates, ensuring that the timeouts occur in the correct order may be difficult.  It is recommended that the more stable chain act as slow trader.  This prevents the slow trader having to wait an extended period if the altcoin's block rate collapses.
+
+Note: The locktime can mean timestamp and block height depending on value.
+
+The response for the method has a subset of the trade information.
+
+    {"id":1, "result": [slow_trader, k_server,
+                        sell_coin_amount, sell_coin_fee, sell_locktime,
+                        buy_coin_amount, buy_coin_fee, buy_locktime]
+             "error": Null}
+
+If the returned values match the request, then the trade is accepted.  Otherwise, it is a counteroffer.
+
+An accepted offer should have at most one 3rd party's public key in the public key list.
+
+If the server does not wish to trade in that coin at all, then the buy_coin_amount, _fee and _locktime should be set to Null in the response.
+
+If the exchange rate is insufficient, servers should modify the sell_coin_amount in preference to modifying the buy_coin_amount.
+
+Servers should accept trades if the client echos back the result to the server.
+
+If a third party is used, the third party's public key must be modified
+
+    k = SHA-256(k_client | k_server)
+
+The result of the SHA-256 operation is considered a big endian encoded unsigned integer.
+
+If k falls outside the finite field, the server should select a different byte array and repeat until success.
+
+The third party's public key is modified to give
+
+    third_party_key_modified = k * third_party_key
+
+This key should be used to generate the third party's refund transaction.
+
+===Request Hash===
+
+This methods is used to obtain hash160(x).  It is only needed when the client is the fast trader.
+
+    {"id": 1, "method": "request.hashx", "params": []}
+
+The response is the hex encoded hash of the the secret parameter.
+
+    {"id":1, "result": [hashx], "error": Null}
+
+The result parameters are defined as
+
+    hashx:   The Hash160(x) encoded as a 40 character (20 byte) hex string
+
+===Exchange Keys===
+
+This method is used to exchange public keys between the parties.  Each party has to provide 5 public keys.
+
+    {"id": 1, "method":"keys.request", "params": [key1, key2, ... key5]}
+
+The server responds with 5 public keys.
+
+    {"id": 1, "result": [key1, key2, ... key5], "error": Null}
+
+===Exchange Bail-in Transaction Hashes===
+
+This method is for exchanging bail-in transaction hashes.
+
+    {"id": 1, "method":"bail_in_hash.request", "params": [client_bail_in_hash]}
+
+The server responds with its own bail-in transaction hash.
+
+    {"id": 1, "result":"server_bail_in_hash", "error": Null}
+
+Both hashes should be encoded as 64 character (32 byte) hashes.  This is the transaction id hash, not hash160.
+
+Note: The fast and slow trader's bail-in transactions are constructed differently.
+
+===Exchange Initial Transactions===
+
+This method is for the parties to exchange unsigned transactions.
+
+    {"id": 1, "method": "exchange.initial_tx", "params": [server_signed_payout, client_refund, client_third_party_refund]}
+
+The parameters are defined as
+    server_signed_payout:      This is the signed payout transaction that pays to the server
+    client_refund:             This is the locked refund transaction that pays to the client
+    client_third_party_refund: This is the third party refund transaction (or Null) that pays to the client
+
+The response is of the same form
+
+    {"id": 1, "result": [server_signed_payout, client_refund, client_third_party_refund], "error": Null}
+
+The parameters are defined as
+
+    client_signed_payout:      This is the signed payout transaction that pays to the client
+    server_refund:             This is the locked refund transaction that pays to the server
+    server_third_party_refund: This is the third party refund transaction (or Null) that pays to the server
+
+===Exchange Final Transaction===
+
+This method is for the parties to exchange the final versions of the transactions.
+
+    {"id": 1, "method": "exchange.final_tx", "params": [server_signed_refund, server_signed_third_party_refund]}
+
+The parameters are defined as
+    server_signed_refund:             This is the locked signed refund transaction that pays to the server
+    server_signed_third_party_refund: This is the third party signed refund transaction (or Null) that pays to the client
+
+The response is of the same form
+
+    {"id": 1, "result": [server_signed_payout, client_refund, client_third_party_refund], "error": Null}
+
+The parameters are defined as
+
+    client_signed_refund:             This is the locked signed refund transaction that pays to the client
+    client_signed_third_party_refund: This is the third party signed refund transaction (or Null) that pays to the client
+
+Once final transactions are exchanged, no further communication is required.
+
+===Trade Cancel===
+
+This allows the parties to back out of a trade before the timeouts are completed.  It is a courtesy and not enforceable.
+
+    {"id": 1, "method": "cancel.transaction", "params": "unlocked_server_signed_refund"}
+
+The parameters are defined as
+    unlocked_server_signed_refund:  This is an unlocked version of the refund transaction that pays to the server
+
+The response is
+    {"id": 1, "result": [unlocked_client_signed_refund]}
+
+The parameters are defined as
+    unlocked_client_signed_refund:  This is an unlocked version of the refund transaction that pays to the client
+
+Since this method is only a courtesy, it doesn't matter that the server could fail to provide the client with the refund transaction.
+
+Once this method is used, the parties should not proceed to step 3.
+
+===Third Party Arbitration===
+
+This method is for submitting transactions to third parties.
+
+    {"id": 1, method:"arbitrate", "params": [k bail_in_transaction refund_transaction new_transaction]}
+
+The parameters are defined as
+    k:                      The k parameter encoded as a integer
+    third_party_key:        The third party's unmodified public key
+    bail_in_transaction:    The original bail-in transaction
+    refund_transaction:     The refund transactions, fully signed
+    new_transaction:        This is the new refund transaction
+
+The third party must
+* Verify that the refund transaction spends the bail_in_transaction
+* Verify that the refund transaction is properly signed
+* Verify that the new_transaction has the same output
+* Verify that the new_transaction has the same locktime as the refund_transactions
+
+The new transaction may have additional outputs.  This allows the third party to be paid.
+
+The response is
+
+    {"id": 1, "result": [signed_new_transaction], "error": Null}
+
+The third party doesn't have to monitor all the chains.  As long as it doesn't allow the locktime to be modified or outputs to be redirected, the system remains secure.
+
+==Compatibility==
+
+The protocol outlined in this BIP requires the use of a non-standard transaction.  The timeout must be set large enough that transactions are accepted by the network before they timeout.
+
+Two new standard transactions are required
+
+    OP_HASH160 OP_EQUAL_VERIFY [public key] OP_CHECKSIG
+
+    OP_HASH160 OP_EQUAL_VERIFY OP_N [public key 1] ... [public key m] OP_M OP_CHECK_MULTISIG
+
+These transactions combine two standard transaction with a hash preimage check.
+
+==Reference Implementation==
+
+TBD
+
+== References ==
+
+[1] https://bitcointalk.org/index.php?topic=193281.0
+
+==Copyright==
+
+This document is placed in the public domain.
