@@ -53,7 +53,7 @@ This transaction can only be spent with both Alice and Bob's signatures.
 
     P2SH Redeem:  OP_2 pub-A1 pub-B1 OP_2 OP_CHECKMULTISIG
 
-4) Alice creates creates her bail-in transaction.
+4) Alice creates her bail-in transaction.
 
 Unlike Bob's bail-in, Alice's bail-in transaction has 3 outputs.
 
